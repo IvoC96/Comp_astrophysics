@@ -1,7 +1,7 @@
 import numpy as np
-#from numpy import linspace
-# import math
-# import time as tm
+from numpy import linspace
+import math
+import time as tm
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
