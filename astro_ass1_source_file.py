@@ -1,0 +1,3 @@
+#Waddup kids!
+
+def function:
