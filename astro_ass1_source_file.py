@@ -1,3 +1,3 @@
 #Waddup kids!
 
-def function:
+print("Hello")
