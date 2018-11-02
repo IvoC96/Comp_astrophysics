@@ -1,0 +1,201 @@
+\documentclass[a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[dutch]{babel}
+\usepackage{graphicx,amsmath,bbm,float,caption,wrapfig,lipsum,hyperref}
+\title{1D finite difference\\
+	1st order upwind HD solver}
+\author{Ivo Cools}
+%	marges \usepackage[left = #cm, right = #cm, top = #cm, bot = #cm]{geometry}
+%	\usepackage[official]{eurosym}
+%	\usepackage{enumerate}
+%	\usepackage{amsmath}
+%	\usepackage{bbm}
+%	\usepackage{graphicx}
+
+\begin{document}
+	\maketitle
+
+%0. Be brave, careful and go step by step. Think twice before walking the bulldozer way and computing the roots of a third order polynomial. The later you summon your computer, the more meaningful your results.\\
+%1. Write the Euler equations in conservative form.\\
+%
+%2. Write the flux in terms of $u_i$ defined as the conservative variables - yep, it’s a necessary step since the following computation can be messy.\\
+%
+%3. Compute the Jacobian of the flux matrix ie the derivative of each of the 3 to 5 components of the flux\footnote{for 1D to 3D problems respectively, with the energy equation included otherwise subtract 1 if you made the polytopic assumption} with respect to the aforementioned $u_i$ conservative variables.\\
+%
+%4. Try to diagonalize this Jacobian. First step : the eigenvalues. Freak out at the sight of the computational maelstrom you end up in. At this stage, 3 possibilities :
+%\begin{itemize}
+%	\item you keep up diving into the swamp, bravely carrying out a pen and paper calculus where you have 120\% chances to make mistakes
+%	\item you ask your favorite formal calculus software to do the job for you (typically Mathematica, Matlab or Maple, or https://www.symbolab.com{a web calculator}), which also means that you loose track of what’s going on and have to blindly rely on the answer given by your computer, which might be a dull 42-type result
+%	\item you make use of your infinite mathematical knowledge (or browse the World Wide Web to refresh your memory) and realize that (i) matrixes which are similar have the same eigenvalues and (ii) matrixes which are obtained by a change of variables (such as conservative to primitive variables) are similar 
+%\end{itemize}
+%Trust me, you want to walk the third path. Restart from step 1 but working with primitive variables now.\\
+%5. You retrieve that the 3 eigenvalues (in 1D) are the speeds at which information propagates (advective speed and acoustic waves carried by the flow).\\
+%6. Step 3 wasn’t pointless because if the eigenvalues are the same whether you work in conservative or in primitive, it is not the case for the eigenvectors. \\
+%\newpage
+
+
+This report is about the development of a finite difference 1st order upwind scheme, specifically to solve hydrodynamical equations. To do this, some guidelines were made available, for which step one is the good ol' handywork-calculations. During this paper, bold-faced characters are indicative of vectors while overlined, bold characters are matrices/tensors.
+
+The original, 1D Euler-equation that is to be solved has the form:
+\begin{equation}\label{eq: standaard}
+\partial_t \mathtt{\textbf{U}} + \nabla_x \mathbf{F(U)} = \mathbf{0}
+\end{equation}
+which in it's full glory becomes:
+
+\begin{equation}
+\partial_t \left(
+\begin{array}{c}
+\rho\\
+\rho v\\
+\frac{P}{\gamma - 1} + \frac{1}{2}\rho v^2\\
+\end{array}
+\right) + \nabla_x 
+\left(\begin{array}{c}
+\rho v \\
+\rho v^2 + \mathtt{P}\\
+(\frac{P}{\gamma - 1} + \frac{1}{2}\rho v^2 + P)v
+\end{array}\right) = \mathbf{0}
+\end{equation}
+Step one is to write the flux term  \textbf{F} in function of the original \textbf{U} variables $u_1 = \rho$; $u_2 = \rho v$ and $u_3 = \frac{P}{\gamma - 1} + \frac{1}{2}\rho v^2$  where $\gamma$ is the "ratio of specific heats". It is defined as $\gamma = \frac{\alpha +2}{\alpha}$ where $\alpha$ the total number of degrees of freedom (3 in this case). [Euler . pdf]\\
+This gives a flux term, in function of these "conserved" variables: 
+\begin{equation}
+	\mathbf{F} = \left(\begin{array}{c}
+		u_2\\
+		(\gamma - 1)u_3 + \frac{1}{2}(3-\gamma)\frac{u_2^2}{u_1}\\
+		\gamma \frac{u_3 u_2}{u_1} - \frac{1}{2}(\gamma-1))\frac{u_2^3}{u_1^2}
+		
+	\end{array}\right)
+\end{equation}
+Naturally, another way to write equation \ref{eq: standaard} is:
+\begin{equation}\label{eq: jacobian}
+	\partial_t \mathbf{U} + \overline{\textbf{J}}\mathbf{(U)} \nabla_x \mathbf{U} = 0
+\end{equation}
+Where $\overline{\textbf{J}}\mathbf{(U)}$ is defined as $\frac{\partial \mathbf{F(U)}}{\partial \mathbf{U}}$
+
+This gives a Jacobian matrix of the flux-term in the form of :
+\begin{equation}
+\overline{\textbf{J}}_F = \left(\begin{matrix}
+0 & 1 & 0\\
+-\frac{1}{2}(3-\gamma)\frac{u_2^2}{u_1^2} & (3-\gamma)\frac{u_2}{u_1}  & \gamma - 1\\ 
+-\gamma \frac{u_3 u_2}{u_1^2} + \frac{1}{2}(\gamma-1))\frac{u_2^3}{u_1^2} & \gamma \frac{u_3 }{u_1} + \frac{3}{2} (\gamma-1)\frac{u_2^2}{u_1} & \gamma \frac{u_2}{u_1}
+
+\end{matrix}\right)
+\end{equation}
+Now, we should calculate the eigenvalues and vectors to more easily solve the Euler-equations. By pure brilliance and by using my infinite mathematical knowledge I realised (i) matrixes which are similar have the same eigenvalues and (ii) matrixes which are obtained by a change of variables (such as conservative to primitive variables) are similar. [el Ilyan]\\
+~\\
+Restarting from step 1 and reworking with "primitive" variables $\rho$, $v$ and $P$ [Euler(1).pdf], we note that we can work in a similar way as above. We start by defining the primitive variable vector \textbf{K}: 
+\begin{equation}
+\mathbf{K} = \left( \begin{array}{c}
+\rho \\
+v \\
+P \\
+\end{array}\right) .
+\end{equation}
+This vector can then be used to rewrite \textbf{U} in function of \textbf{K}:
+\begin{equation}
+\begin{split}
+	\partial_i \mathbf{U} 
+	&= \partial \left(
+	\begin{array}{c}
+	\rho\\
+	\rho v\\
+	\frac{P}{\gamma - 1} + \frac{1}{2}\rho v^2\\
+	\end{array}
+	\right) \\
+	&= \left(
+	\begin{array}{c}
+	\rho'\\
+	\rho \mathbf{v'}+\rho' v \\
+	\frac{P'}{\gamma - 1} + \frac{1}{2}\rho' v^2+ \rho v\mathbf{v'}\\
+	\end{array}
+	\right)\\
+	&= \left(
+	\begin{matrix}
+	1 & 0 & 0\\
+	v & \rho & 0 \\
+	\frac{1}{2} v^2 & \rho v & \frac{1}{\gamma - 1} \\
+    \end{matrix}
+	\right) \left(\begin{array}{c}
+	\rho'\\
+	v' \\
+	P'\\	
+	\end{array}\right)\\
+	& = \overline{\textbf{M}} \partial_i \mathbf{K} \quad ,
+	\end{split}
+\end{equation}
+which in turn can be used to rewrite equation \ref{eq: jacobian} as follows:
+\begin{equation}\label{eq: M*dK+J*M*dK}
+	\overline{\textbf{M}}\partial_t \mathbf{K} + \mathbf{J(K)} \overline{\textbf{M}}\nabla_x \mathbf{K} \quad .
+\end{equation}
+Multiplying eq. \ref{eq: M*dK+J*M*dK} with $\overline{\textbf{M}}^{-1}$ on the left gives:
+\begin{equation}\label{eq: totale vergelijking to solve 1}
+\partial_t \mathbf{K} + \widetilde{\mathbf{J(K)}}\nabla_x \mathbf{K}
+\end{equation}
+defining $\widetilde{\mathbf{J(K)}}$ as :\begin{equation}\label{eq: J-Jtildeverband}
+\widetilde{\mathbf{J(K)}} = \overline{\textbf{M}}^{-1} \overline{\textbf{J}}\mathbf{(K)} \overline{\textbf{M}} \quad .
+\end{equation}
+Using eq. \ref{eq: J-Jtildeverband} and a lot of manual calculations (which were obviously crosschecked with online sources), we get: 
+\begin{equation}
+	\widetilde{\mathbf{J(K)}} = \left(\begin{matrix}
+	v & \rho & 0 \\
+	0 & v & \frac{1}{\rho}\\
+	0 & \gamma \mathtt{P} & v\\
+	\end{matrix}\right)
+\end{equation}
+Obviously, this matrix is similar to $\mathbf{J(K)}$, and as such has the same eigenvalues, but \emph{not} the same eigenvectors! Using the miracle that is basic arithmetic (combined with MatLab), we are able to calculate all the eigenvalues, \emph{with} corresponding eigenvectors!
+\begin{equation}
+	\left\{ 
+	\begin{matrix}
+	 v & \mathtt{with} \ \mathtt{eigenvector} & \left(\begin{array}{c}
+	 1\\ 0 \\ 0
+	 \end{array}\right)\\ 
+	 \quad\\
+	 v + \sqrt{\gamma\frac{ \mathtt{P}}{\rho}} & \mathtt{with} \ \mathtt{eigenvector} & \left(\begin{array}{c}
+	 \frac{\rho}{\gamma\mathtt{P}}\\ -\sqrt{\frac{1}{\gamma\mathtt{P}\rho}} \\ 1
+	 \end{array}\right)\\
+	 \quad\\
+	 v - \sqrt{\gamma\frac{ \mathtt{P}}{\rho}} & \mathtt{with} \ \mathtt{eigenvector} &\left(\begin{array}{c}
+	\frac{\rho}{\gamma\mathtt{P}}\\ \sqrt{\frac{1}{\gamma\mathtt{P}\rho}} \\ 1
+	 \end{array}\right)
+	
+	\end{matrix}
+	\right. 
+\end{equation}
+So using this we can finally diagonalise $\widetilde{\mathbf{J(K)}}$: 
+\begin{equation*}
+\begin{split}
+	\widetilde{\mathbf{J(K)}} & = \left(\begin{matrix}
+	1 &  \frac{\rho}{\gamma\mathtt{P}} &  \frac{\rho}{\gamma\mathtt{P}} \\
+	0 &  -\sqrt{\frac{1}{\gamma\mathtt{P}\rho}} & \sqrt{\frac{1}{\gamma\mathtt{P}\rho}}\\
+	0 & 1 & 1
+	\end{matrix}\right) \left(\begin{matrix}
+	v &  0 &  0 \\
+	0 &   v + \sqrt{\gamma\frac{ \mathtt{P}}{\rho}}  & 0\\
+	0 & 0 &  v - \sqrt{\gamma\frac{ \mathtt{P}}{\rho}}
+	\end{matrix}\right) 
+	\left(\begin{matrix}
+	1 &  \frac{\rho}{\gamma\mathtt{P}} &  \frac{\rho}{\gamma\mathtt{P}} \\
+	0 &  -\sqrt{\frac{1}{\gamma\mathtt{P}\rho}} & \sqrt{\frac{1}{\gamma\mathtt{P}\rho}}\\
+	0 & 1 & 1
+	\end{matrix}\right)^{-1}\\
+	& =:  \overline{\textbf{A}}\mathbf{(K)} \cdot \overline{\textbf{D}}\mathbf{(K)}\cdot \overline{\textbf{A}}\mathbf{(K)}^{-1}
+\end{split}
+\end{equation*}
+
+for later, it is easier to multiply equation \ref{eq: totale vergelijking to solve 1} with  $\overline{\textbf{A}}^{-1}$ on the left: \begin{equation}
+\begin{split}
+	0 &= \overline{\textbf{A}}\mathbf{(K)}^{-1} \partial_t \mathbf{K} + \overline{\textbf{D}}\mathbf{(K)} \overline{\textbf{A}}\mathbf{(K)}^{-1}  \nabla_x\mathbf{K}\\
+	 & = \partial_t [\overline{\textbf{A}}\mathbf{(K)}^{-1} \mathbf{K}] + \overline{\textbf{D}}\mathbf{(K)}   \nabla_x [\overline{\textbf{A}}\mathbf{(K)}^{-1} \mathbf{K}]\\
+	 & = \partial_t [\overline{\textbf{A}}\mathbf{(K)}^{-1} \mathbf{K}] +  \left(\begin{matrix}
+	 v &  0 &  0 \\
+	 0 &   v + \sqrt{\gamma\frac{ \mathtt{P}}{\rho}}  & 0\\
+	 0 & 0 &  v - \sqrt{\gamma\frac{ \mathtt{P}}{\rho}}
+	 \end{matrix}\right)   \nabla_x [\overline{\textbf{A}}\mathbf{(K)}^{-1} \mathbf{K}]\\
+	 & =: \partial_t \mathbf{W} +  \left(\begin{matrix}
+	 v &  0 &  0 \\
+	 0 &   v + \sqrt{\gamma\frac{ \mathtt{P}}{\rho}}  & 0\\
+	 0 & 0 &  v - \sqrt{\gamma\frac{ \mathtt{P}}{\rho}}
+	 \end{matrix}\right)   \nabla_x \mathbf{W}
+	\end{split}
+\end{equation}
+\end{document}
