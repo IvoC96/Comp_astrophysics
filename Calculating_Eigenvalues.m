@@ -5,5 +5,9 @@ syms rho v gamma P
 % F= simplify(D) 
 % G = simplify(E)
 
-H = [1 rho./(gamma*P) rho./(gamma*P); 0 sqrt(1/(gamma* rho* P)) -sqrt(1/(gamma* rho* P)); 0 1 1 ];
+rho = 8;
+v = 0;
+gamma = 1.4;
+P = 8/gamma;
+H = [1 rho./(gamma*P) rho./(gamma*P); 0 -sqrt(1/(gamma* rho* P)) sqrt(1/(gamma* rho* P)); 0 1 1 ];
 I = inv(H)
